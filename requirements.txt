@@ -25,3 +25,4 @@ matplotlib
 delta-spark
 tabulate
 pytest-cov
+dotenv
