@@ -1,111 +1,149 @@
-"""
-Extract a dataset from a URL like Kaggle or data.gov. 
-JSON or CSV formats tend to work well
-"""
-
 import requests
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, concat_ws, when
+from dotenv import load_dotenv
 import os
+import json
+import base64
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when, concat_ws, monotonically_increasing_id
+
+# Load environment variables
+load_dotenv()
+server_hostname = os.getenv("SERVER_HOSTNAME")
+access_token = os.getenv("ACCESS_TOKEN")
+FILESTORE_PATH = "dbfs:/FileStore/mini_project"
+headers = {"Authorization": f"Bearer {access_token}"}
+url = f"https://{server_hostname}/api/2.0"
 
 
-def log_output(operation, output, query=None):
-    LOG_FILE = "pyspark_output.md"
-    """Adds log information to a markdown file."""
-    with open(LOG_FILE, "a") as file:
-        file.write(f"## {operation}\n\n")
-        if query:
-            file.write(f"### Query:\n```\n{query}\n```\n\n")
-        file.write("### Output:\n\n")
-        file.write(f"```\n{output}\n```\n\n")
+def perform_query(path, headers, data={}):
+    session = requests.Session()
+    resp = session.request(
+        "POST", url + path, data=json.dumps(data), verify=True, headers=headers
+    )
+    return resp.json()
+
+
+def mkdirs(path, headers):
+    _data = {"path": path}
+    return perform_query("/dbfs/mkdirs", headers=headers, data=_data)
+
+
+def create(path, overwrite, headers):
+    _data = {"path": path, "overwrite": overwrite}
+    return perform_query("/dbfs/create", headers=headers, data=_data)
+
+
+def add_block(handle, data, headers):
+    _data = {"handle": handle, "data": data}
+    return perform_query("/dbfs/add-block", headers=headers, data=_data)
+
+
+def close(handle, headers):
+    _data = {"handle": handle}
+    return perform_query("/dbfs/close", headers=headers, data=_data)
+
+
+def put_file_from_url(url, dbfs_path, overwrite, headers):
+    response = requests.get(url)
+    if response.status_code == 200:
+        content = response.content
+        handle = create(dbfs_path, overwrite, headers=headers)["handle"]
+        print("Putting file: " + dbfs_path)
+        for i in range(0, len(content), 2**20):
+            add_block(
+                handle,
+                base64.standard_b64encode(content[i : i + 2**20]).decode(),
+                headers=headers,
+            )
+        close(handle, headers=headers)
+        print(f"File {dbfs_path} uploaded successfully.")
+    else:
+        print(f"Error downloading file from {url}. Status code: {response.status_code}")
 
 
 def extract(
-    spark,
     url="https://gist.githubusercontent.com/armgilles/194bcff35001e7eb53a2a8b441e8b2c6/raw/92200bc0a673d5ce2110aaad4544ed6c4010f687/pokemon.csv",
+    file_path=FILESTORE_PATH + "/pokemon.csv",
+    directory=FILESTORE_PATH,
+    overwrite=True,
 ):
-    log_output("Initiating Extract", "Fetching data from URL.")
-    # Request data from API
-    response = requests.get(url)
-    if response.status_code == 200:
-        csv_path = os.path.join("data", "pokemon.csv")
-        with open(csv_path, "wb") as f:
-            f.write(response.content)
-        # Load data into a Spark DataFrame
-        df_spark = spark.read.csv("data/pokemon.csv", header=True, inferSchema=True)
-        output = df_spark.limit(10).toPandas().to_markdown()
-        log_output("Data Extracted", output)
-        print("Data extracted successfully.", output)
-        return df_spark
-    else:
-        error_message = f"Failed to fetch data. Status code: {response.status_code}"
-        log_output("Extract Failed", error_message)
-        print(error_message)
-        return None
+    """Extracts a URL to a file path on DBFS."""
+    # Make the directory
+    mkdirs(path=directory, headers=headers)
+    # Upload the CSV file to DBFS
+    put_file_from_url(url, file_path, overwrite, headers=headers)
+    return file_path
 
 
-def transform(df_spark):
-    log_output("Initiating Transform", "Transforming data...")
-    # Combine 'Type 1' and 'Type 2' into a new 'Type' column
+"""
+Transform and Load function
+"""
+
+
+def load(dataset=FILESTORE_PATH + "/pokemon.csv", table_name="pokemon_data"):
+    """Transforms and loads data into a Delta table."""
+    spark = SparkSession.builder.appName(
+        "Transform and Load Pokemon Data"
+    ).getOrCreate()
+    # Load data from DBFS
+    df_spark = spark.read.csv(dataset, header=True, inferSchema=True)
+
+    # Transformations
     df_spark = df_spark.withColumn("Type", concat_ws("/", col("Type 1"), col("Type 2")))
-    # Replace null Type 2 with Type 1
     df_spark = df_spark.withColumn(
         "Type", when(col("Type 2").isNull(), col("Type 1")).otherwise(col("Type"))
     )
-    # Rename '#' column to 'Number' for clarity
     df_spark = df_spark.withColumnRenamed("#", "Number")
     df_spark = df_spark.withColumnRenamed("Sp. Atk", "Sp_Atk")
     df_spark = df_spark.withColumnRenamed("Sp. Def", "Sp_Def")
+    # Add unique ID
+    df_spark = df_spark.withColumn("id", monotonically_increasing_id())
     # Select relevant columns
     df_spark = df_spark.select(
-        col("Number"),
-        col("Name"),
-        col("Type"),
-        col("Total"),
-        col("HP"),
-        col("Attack"),
-        col("Defense"),
-        col("Sp_Atk"),
-        col("Sp_Def"),
-        col("Speed"),
-        col("Generation"),
-        col("Legendary"),
+        "id",
+        "Number",
+        "Name",
+        "Type",
+        "Total",
+        "HP",
+        "Attack",
+        "Defense",
+        "Sp_Atk",
+        "Sp_Def",
+        "Speed",
+        "Generation",
+        "Legendary",
     )
-    output = df_spark.limit(20).toPandas().to_markdown()
-    log_output("Data Transformed", output)
-    print("Data transformed successfully.")
-    return df_spark
+
+    # Save as Delta table
+    df_spark.write.format("delta").mode("overwrite").saveAsTable(table_name)
+    num_rows = df_spark.count()
+    print(f"Number of rows in the transformed dataset: {num_rows}")
+    return "Transformation and loading completed successfully."
 
 
-def load(df_spark, table_name):
-    """Loads the transformed data into a Databricks SQL table."""
-    try:
-        # Write the DataFrame to Databricks as a managed table
-        df_spark.write.format("delta").mode("overwrite").saveAsTable(table_name)
-        print(f"Data loaded into {table_name} successfully.")
-        log_output("Data Load", f"Data loaded into {table_name} successfully.")
-    except Exception as e:
-        error_message = f"Error loading data: {e}"
-        log_output("Load Failed", error_message)
-        print(error_message)
+"""
+Query function
+"""
 
 
-def spark_sql_query(spark, query):
-    log_output("Initiating SQL Query", "Executing SQL query on Spark DataFrame.")
-    # Execute the SQL query and log the results
-    result_df = spark.sql(query)
-    output = result_df.limit(10).toPandas().to_markdown()
-    log_output("SQL Query Executed", output, query=query)
-    print("Spark SQL query executed successfully.")
+def query_transform(table_name="pokemon_data"):
+    """Runs a query on the transformed data."""
+    spark = SparkSession.builder.appName("Run Query").getOrCreate()
+    query = f"""
+        SELECT Type, COUNT(*) AS count
+        FROM {table_name}
+        GROUP BY Type
+        ORDER BY count DESC
+    """
+    query_result = spark.sql(query)
+    query_result.show(10)
+    num_rows = query_result.count()
+    print(f"Total number of types: {num_rows}")
+    return query_result
 
 
-# Usage example:
 if __name__ == "__main__":
-    # Initialize Spark session
-    spark = SparkSession.builder.appName("ETL Pokemon Data").getOrCreate()
-    df_spark = extract(spark)
-    if df_spark:
-        df_spark = transform(df_spark)
-        table_name = "pokemon_data"
-        load(df_spark, table_name)
-        # spark_sql_query(spark, f"SELECT * FROM {table_name} LIMIT 10")
+    # extract()
+    load()
+    # query_transform()
