@@ -6,3 +6,19 @@ pytest-cov==4.0.0
 requests==2.26.0
 #rust based linter
 ruff==0.0.284
+boto3==1.24.87
+
+#web
+fastapi==0.85.0
+uvicorn==0.18.3
+
+#databricks
+pandas
+numpy
+requests
+databricks-sql-connector
+databricks
+pyspark
+pytest
+python-dotenv
+matplotlib

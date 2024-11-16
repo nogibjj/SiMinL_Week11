@@ -1,92 +1,38 @@
-"""handles cli commands"""
-
-import sys
-import argparse
-from mylib.extract import extract
-from mylib.transform_load import load
-from mylib.query import (
-    update_record,
-    delete_record,
-    create_record,
-    general_query,
-    read_data,
-)
-
-
-def handle_arguments(args):
-    """add action based on inital calls"""
-    # parses command line arguments to determine which action
-    parser = argparse.ArgumentParser(description="ETL-Query script")
-    # sets up specific arguments
-    parser.add_argument(
-        "action",
-        choices=[
-            "extract",
-            "transform_load",
-            "update_record",
-            "delete_record",
-            "create_record",
-            "general_query",
-            "read_data",
-        ],
-    )
-    # parses first argument action to dtermine which action requested
-    args = parser.parse_args(args[:1])
-    print(args.action)
-    if args.action == "update_record":
-        parser.add_argument("id", type=int)
-        parser.add_argument("Major")
-        parser.add_argument("Major_category")
-        parser.add_argument("Grad_total", type=int)
-        parser.add_argument("Grad_employed", type=int)
-
-    if args.action == "create_record":
-        parser.add_argument("Major")
-        parser.add_argument("Major_category")
-        parser.add_argument("Grad_total", type=int)
-        parser.add_argument("Grad_employed", type=int)
-
-    if args.action == "general_query":
-        parser.add_argument("query")
-
-    if args.action == "delete_record":
-        parser.add_argument("id", type=int)
-
-    # parse again with ever
-    return parser.parse_args(sys.argv[1:])
+from pyspark.sql import SparkSession
+from mylib.ETL import extract, transform, load
+from mylib.query import spark_sql_query  # Assuming spark_sql_query is in query_db.py
 
 
 def main():
-    """handles all the cli commands"""
-    args = handle_arguments(sys.argv[1:])
+    # Initialize Spark session
+    spark = SparkSession.builder.appName("ETL Pokemon Data").getOrCreate()
 
-    if args.action == "extract":
-        print("Extracting data...")
-        extract()
-    elif args.action == "transform_load":
-        print("Transforming data...")
-        load()
-    elif args.action == "update_record":
-        update_record(
-            args.id,
-            args.Major,
-            args.Major_category,
-            args.Grad_total,
-            args.Grad_employed,
+    # URL of the Pokémon CSV data
+    url = (
+        "https://gist.githubusercontent.com/armgilles/"
+        "194bcff35001e7eb53a2a8b441e8b2c6/"
+        "raw/92200bc0a673d5ce2110aaad4544ed6c4010f687/pokemon.csv"
+    )
+    # Extract, transform, and load data
+    df_spark = extract(spark, url)
+    if df_spark:
+        df_spark = transform(df_spark)
+        table_name = "pokemon_data"
+        load(df_spark, table_name)
+
+        # Execute SQL queries
+        # Example: Select all legendary Pokémon
+        query1 = (
+            f"SELECT Name, Type, Total FROM {table_name} "
+            f"WHERE Legendary = 'True' ORDER BY Total DESC"
         )
-    elif args.action == "delete_record":
-        delete_record(args.id)
-    elif args.action == "create_record":
-        create_record(
-            args.Major, args.Major_category, args.Grad_total, args.Grad_employed
+        spark_sql_query(spark, query1)
+
+        # Example: Select top 10 Pokémon by Total stats
+        query2 = (
+            f"SELECT Name, Type, Total FROM {table_name} ORDER BY Total DESC LIMIT 10"
         )
-    elif args.action == "general_query":
-        general_query(args.query)
-    elif args.action == "read_data":
-        data = read_data()
-        print(data)
-    else:
-        print(f"Unknown action: {args.action}")
+        spark_sql_query(spark, query2)
 
 
 if __name__ == "__main__":

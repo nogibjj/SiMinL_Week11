@@ -1,25 +1,23 @@
-[![CI](https://github.com/nogibjj/SiMinL_Week5/actions/workflows/hello.yml/badge.svg)](https://github.com/nogibjj/SiMinL_Week5/actions/workflows/hello.yml)
 
-# SiMinL_MiniProj5
+
+# SiMinL_MiniProj11
 
 # Requirements
-Connect to a SQL database
-Perform CRUD operations (Create, Read, Update, Delete)
-Write at least two different SQL queries
-Grading Criteria 
+Create a data pipeline using Databricks
+Include at least one data source and one data sink
+Databricks notebook or script
+Document or video demonstrating the pipeline
 
 # Purpose 
-The purpose of this project is to create CRUD actions using SQLite and Python, and to build an ETL-query pipeline. Here, xxx is used as a sample dataset. It is converted to a .db file, and CRUD actions are conducted.
+Overview: This repository provides an ETL pipeline using PySpark within Databricks to extract data from an external source, transform it for analysis, and load it into a Databricks Delta table.
 
-# Preparation
-1. Open codespaces
-2. Wait for container to be built and virtual environment to be activated with requirements.txt installed
-3.Extract: run make extract
-4. Transform and load: run make transform_load
-5. Query: run make query or alternatively write your own query using python main.py general_query <insert query>
-
-# Sample CRUD Operations
-Create: python main.py create_record 'Computer Science' 'STEM' 1500 1200
-Read: python main.py read_data()
-Update: python main.py update_record 1 'Electrical Engineering' 'STEM' 2000 1500
-Delete: python main.py delete_record 1
+# Components
+1. Create the Cluster
+![alt text](image-1.png)
+2. Import Github repo
+![alt text](image.png)
+3. Perform ETL
+Extract: From the source
+Transform: Clean and structure with PySpark
+Load: Insert transformed data into a Delta table in Databricks
+4. Run the job
