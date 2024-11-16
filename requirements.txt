@@ -22,3 +22,6 @@ pyspark
 pytest
 python-dotenv
 matplotlib
+delta-spark
+tabulate
+pytest-cov
