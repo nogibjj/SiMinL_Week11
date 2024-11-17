@@ -14,4 +14,3 @@ if __name__ == "__main__":
     extract()
     load()
     query_transform()
-    viz()
