@@ -14,10 +14,10 @@ Overview: This repository provides an ETL pipeline using PySpark within Databric
 # Components
 1. Create the Cluster
 ![alt text](image-1.png)
-2. Import Github repo
+2. Import Github repo to Databricks
 ![alt text](image.png)
-3. Perform ETL
-Extract: From the source
-Transform: Clean and structure with PySpark
-Load: Insert transformed data into a Delta table in Databricks
-4. Run the job
+3. Configure environment in Github and Databricks Cluster
+4. Create jobs and link them to Github repo
+5. Run the job Perform ETL
+![alt text](image-2.png)
+
