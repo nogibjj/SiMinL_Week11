@@ -1,4 +1,4 @@
-
+[![CI](https://github.com/nogibjj/SiMinL_Week11/actions/workflows/hello.yml/badge.svg)](https://github.com/nogibjj/SiMinL_Week11/actions/workflows/hello.yml)
 
 # SiMinL_MiniProj11
 
