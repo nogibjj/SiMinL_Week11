@@ -2,8 +2,6 @@ import requests
 import os
 import json
 import base64
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, concat_ws, monotonically_increasing_id
 from dotenv import load_dotenv
 
 # Load environment variables
